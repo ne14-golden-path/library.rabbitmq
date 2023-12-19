@@ -4,8 +4,6 @@
 
 namespace ne14.library.rabbitmq;
 
-using System.Threading.Tasks;
-
 /// <summary>
 /// A message producer.
 /// </summary>
@@ -16,6 +14,5 @@ public interface IMqProducer<in T>
     /// Produces a message.
     /// </summary>
     /// <param name="message">The message.</param>
-    /// <returns>Async task.</returns>
-    public Task Produce(T message);
+    public void Produce(T message);
 }

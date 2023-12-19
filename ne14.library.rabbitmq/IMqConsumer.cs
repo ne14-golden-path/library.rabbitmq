@@ -16,6 +16,8 @@ public interface IMqConsumer<in T>
     /// Consumes a message.
     /// </summary>
     /// <param name="message">The message.</param>
+    /// <param name="attemptNumber">The attempt number. For the first message,
+    /// this will be equal to <c>1</c>.</param>
     /// <returns>Async task.</returns>
-    public Task Consume(T message);
+    public Task Consume(T message, int attemptNumber);
 }

@@ -4,7 +4,9 @@
 
 namespace ne14.library.rabbitmq;
 
-using System.Threading.Tasks;
+using System.Text;
+using System.Text.Json;
+using RabbitMQ.Client;
 
 /// <summary>
 /// A RabbitMQ producer.
@@ -12,6 +14,32 @@ using System.Threading.Tasks;
 /// <typeparam name="T">The message type.</typeparam>
 public abstract class RabbitMqProducer<T> : IMqProducer<T>
 {
+    private readonly RabbitMqSession session;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RabbitMqProducer{T}"/> class.
+    /// </summary>
+    /// <param name="session">The session.</param>
+    protected RabbitMqProducer(RabbitMqSession session)
+    {
+        this.session = session;
+        this.session.Channel.ExchangeDeclare(this.ExchangeName, ExchangeType.Fanout, true, false);
+    }
+
+    /// <summary>
+    /// Gets the exchange name.
+    /// </summary>
+    public abstract string ExchangeName { get; }
+
     /// <inheritdoc/>
-    public abstract Task Produce(T message);
+    public void Produce(T message)
+    {
+        var json = JsonSerializer.Serialize(message);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        var p = this.session.Channel.CreateBasicProperties();
+        p.DeliveryMode = 2;
+
+        this.session.Channel.BasicPublish(this.ExchangeName, string.Empty, p, bytes);
+    }
 }
