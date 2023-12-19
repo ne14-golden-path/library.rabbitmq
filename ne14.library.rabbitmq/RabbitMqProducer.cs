@@ -36,10 +36,6 @@ public abstract class RabbitMqProducer<T> : IMqProducer<T>
     {
         var json = JsonSerializer.Serialize(message);
         var bytes = Encoding.UTF8.GetBytes(json);
-
-        var p = this.session.Channel.CreateBasicProperties();
-        p.DeliveryMode = 2;
-
-        this.session.Channel.BasicPublish(this.ExchangeName, string.Empty, p, bytes);
+        this.session.Channel.BasicPublish(this.ExchangeName, string.Empty, null, bytes);
     }
 }
