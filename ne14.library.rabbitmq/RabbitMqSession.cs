@@ -27,6 +27,7 @@ public sealed class RabbitMqSession : IDisposable
             UserName = username,
             Password = password,
             HostName = hostname,
+            DispatchConsumersAsync = true,
         };
 
         this.connection = factory.CreateConnection();

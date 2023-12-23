@@ -31,9 +31,7 @@ public abstract class RabbitMqConsumer<T> : IMqConsumer<T>
         this.session.Channel.ExchangeDeclare(this.ExchangeName, ExchangeType.Fanout, true, false);
         this.session.Channel.QueueDeclare(this.QueueName, true, false, false);
         this.session.Channel.QueueBind(this.QueueName, this.ExchangeName, string.Empty);
-
         this.consumer = new AsyncEventingBasicConsumer(this.session.Channel);
-        this.Subscribe();
     }
 
     /// <summary>
@@ -59,18 +57,18 @@ public abstract class RabbitMqConsumer<T> : IMqConsumer<T>
     /// </summary>
     public void Subscribe()
     {
-        Debug.WriteLine("Subscribing...");
+        Trace.WriteLine("Subscribing...");
 
         if (this.consumerTag == null)
         {
             this.consumer.Received += this.HandleAsync;
             this.consumerTag = this.session.Channel.BasicConsume(this.QueueName, false, this.consumer);
 
-            Debug.WriteLine("Subscribed!");
+            Trace.WriteLine("Subscribed!");
         }
         else
         {
-            Debug.WriteLine("Could not subscribe; consumer tag is already populated.");
+            Trace.WriteLine("Could not subscribe; consumer tag is already populated.");
         }
     }
 
@@ -79,7 +77,7 @@ public abstract class RabbitMqConsumer<T> : IMqConsumer<T>
     /// </summary>
     public void Unsubscribe()
     {
-        Debug.WriteLine("Unsubscribing...");
+        Trace.WriteLine("Unsubscribing...");
 
         this.consumer.Received -= this.HandleAsync;
         if (this.consumerTag != null)
@@ -87,11 +85,11 @@ public abstract class RabbitMqConsumer<T> : IMqConsumer<T>
             this.session.Channel.BasicCancel(this.consumerTag);
             this.consumerTag = null;
 
-            Debug.WriteLine("Unsubscribed");
+            Trace.WriteLine("Unsubscribed");
         }
         else
         {
-            Debug.WriteLine("Could not unsubscribe; consumer tag is not populated.");
+            Trace.WriteLine("Could not unsubscribe; consumer tag is not populated.");
         }
     }
 
@@ -99,7 +97,7 @@ public abstract class RabbitMqConsumer<T> : IMqConsumer<T>
     {
         if (this.consumerTag == null)
         {
-            Debug.WriteLine("Refusing to consumer; consumer tag is not populated.");
+            Trace.WriteLine("Refusing to consume; consumer tag is not populated.");
         }
 
         try
@@ -109,19 +107,19 @@ public abstract class RabbitMqConsumer<T> : IMqConsumer<T>
             await this.Consume(message!, attempt);
             this.session.Channel.BasicAck(args.DeliveryTag, false);
 
-            Debug.WriteLine("Message ACK'ed.");
+            Trace.WriteLine("Message ACK'ed.");
         }
         catch (TransientFailureException)
         {
             this.session.Channel.BasicNack(args.DeliveryTag, false, requeue: true);
 
-            Debug.WriteLine("Message NACK'ed temporarily.");
+            Trace.WriteLine("Message NACK'ed temporarily.");
         }
         catch
         {
             this.session.Channel.BasicNack(args.DeliveryTag, false, requeue: false);
 
-            Debug.WriteLine("Message NACK'ed permanently.");
+            Trace.WriteLine("Message NACK'ed permanently.");
         }
     }
 }
