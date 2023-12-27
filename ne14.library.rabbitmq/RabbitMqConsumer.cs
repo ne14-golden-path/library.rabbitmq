@@ -4,9 +4,12 @@
 
 namespace ne14.library.rabbitmq;
 
+using System;
+using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using ne14.library.rabbitmq.Exceptions;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -16,6 +19,11 @@ using RabbitMQ.Client.Events;
 /// <typeparam name="T">The message type.</typeparam>
 public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
 {
+    private readonly JsonSerializerOptions jsonOpts = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     private readonly RabbitMqSession session;
     private readonly AsyncEventingBasicConsumer consumer;
     private string? consumerTag;
@@ -27,9 +35,15 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     protected RabbitMqConsumer(RabbitMqSession session)
     {
         this.session = session;
+        var queueArgs = new Dictionary<string, object>()
+        {
+            ["x-queue-type"] = "quorum",
+        };
+
         this.session.Channel.ExchangeDeclare(this.ExchangeName, ExchangeType.Fanout, true, false);
-        this.session.Channel.QueueDeclare(this.QueueName, true, false, false);
+        this.session.Channel.QueueDeclare(this.QueueName, true, false, false, queueArgs);
         this.session.Channel.QueueBind(this.QueueName, this.ExchangeName, string.Empty);
+
         this.consumer = new AsyncEventingBasicConsumer(this.session.Channel);
     }
 
@@ -77,8 +91,20 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     /// <inheritdoc/>
     protected override async Task ConsumeInternal(object messageId, string json, int attempt)
     {
-        var typedMessage = JsonSerializer.Deserialize<T>(json);
-        await this.Consume(messageId, typedMessage!, attempt);
+        T? typedMessage;
+        try
+        {
+            typedMessage = JsonSerializer.Deserialize<T>(json, this.jsonOpts);
+        }
+        catch (Exception ex)
+        {
+            throw new PermanentFailureException("Error parsing json", ex);
+        }
+
+        if (typedMessage != null)
+        {
+            await this.Consume(messageId, typedMessage, attempt);
+        }
     }
 
     /// <inheritdoc/>
@@ -97,7 +123,8 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
 
     private async Task HandleAsync(object sender, BasicDeliverEventArgs args)
     {
-        var hasCount = args.BasicProperties.Headers.TryGetValue("x-delivery-count", out var countObject);
+        var headers = args.BasicProperties.Headers ?? new Dictionary<string, object>();
+        var hasCount = headers.TryGetValue("x-delivery-count", out var countObject);
         var attempt = hasCount && int.TryParse(countObject.ToString(), out var count) ? count + 1 : 1;
         var json = Encoding.UTF8.GetString(args.Body.ToArray());
         await this.ConsumeAsync(args.DeliveryTag, json, attempt);

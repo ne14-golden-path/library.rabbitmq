@@ -35,15 +35,21 @@ public abstract class ConsumerBase : IMqConsumer, IHostedService
     public async Task ConsumeAsync(object messageId, string json, int attempt)
     {
         await this.OnConsuming(messageId, json, attempt);
+        var consumedOk = false;
         try
         {
             await this.ConsumeInternal(messageId, json, attempt);
-            await this.OnConsumeSuccess(messageId, json, attempt);
+            consumedOk = true;
         }
         catch (Exception ex)
         {
             var doRetry = await this.DoRetry(ex, attempt, json);
             await this.OnConsumeFailure(messageId, json, attempt, doRetry);
+        }
+
+        if (consumedOk)
+        {
+            await this.OnConsumeSuccess(messageId, json, attempt);
         }
     }
 
