@@ -12,7 +12,7 @@ using RabbitMQ.Client;
 /// A RabbitMQ producer.
 /// </summary>
 /// <typeparam name="T">The message type.</typeparam>
-public abstract class RabbitMqProducer<T> : IMqProducer<T>
+public abstract class RabbitMqProducer<T> : ITypedMqProducer<T>
 {
     private readonly RabbitMqSession session;
 

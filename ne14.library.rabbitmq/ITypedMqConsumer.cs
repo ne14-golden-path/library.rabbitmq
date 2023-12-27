@@ -1,4 +1,4 @@
-﻿// <copyright file="IMqConsumer.cs" company="ne1410s">
+﻿// <copyright file="ITypedMqConsumer.cs" company="ne1410s">
 // Copyright (c) ne1410s. All rights reserved.
 // </copyright>
 
@@ -7,16 +7,17 @@ namespace ne14.library.rabbitmq;
 using System.Threading.Tasks;
 
 /// <summary>
-/// That which consumes mq messages.
+/// A message consumer.
 /// </summary>
-public interface IMqConsumer
+/// <typeparam name="T">The message type.</typeparam>
+public interface ITypedMqConsumer<in T> : IMqConsumer
 {
     /// <summary>
-    /// Consumes a raw message.
+    /// Consumes a message.
     /// </summary>
     /// <param name="messageId">The message id.</param>
-    /// <param name="json">The raw message json.</param>
+    /// <param name="message">The message.</param>
     /// <param name="attempt">The attempt number.</param>
     /// <returns>Async task.</returns>
-    public Task ConsumeAsync(object messageId, string json, int attempt);
+    public Task Consume(object messageId, T message, int attempt);
 }

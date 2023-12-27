@@ -4,10 +4,9 @@
 
 namespace ne14.library.rabbitmq;
 
-using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using ne14.library.rabbitmq.Exceptions;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -15,7 +14,7 @@ using RabbitMQ.Client.Events;
 /// A RabbitMQ consumer.
 /// </summary>
 /// <typeparam name="T">The message type.</typeparam>
-public abstract class RabbitMqConsumer<T> : IMqConsumer<T>
+public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
 {
     private readonly RabbitMqSession session;
     private readonly AsyncEventingBasicConsumer consumer;
@@ -50,76 +49,57 @@ public abstract class RabbitMqConsumer<T> : IMqConsumer<T>
     public string QueueName => $"q-{this.AppName}-{this.ExchangeName}";
 
     /// <inheritdoc/>
-    public abstract Task Consume(T message, int attemptNumber);
+    public abstract Task Consume(object messageId, T message, int attempt);
 
-    /// <summary>
-    /// Starts listening.
-    /// </summary>
-    public void Subscribe()
+    /// <inheritdoc/>
+    protected override async Task StartInternal()
     {
-        Trace.WriteLine("Subscribing...");
-
+        await Task.CompletedTask;
         if (this.consumerTag == null)
         {
             this.consumer.Received += this.HandleAsync;
             this.consumerTag = this.session.Channel.BasicConsume(this.QueueName, false, this.consumer);
-
-            Trace.WriteLine("Subscribed!");
-        }
-        else
-        {
-            Trace.WriteLine("Could not subscribe; consumer tag is already populated.");
         }
     }
 
-    /// <summary>
-    /// Stops listening.
-    /// </summary>
-    public void Unsubscribe()
+    /// <inheritdoc/>
+    protected override async Task StopInternal()
     {
-        Trace.WriteLine("Unsubscribing...");
-
+        await Task.CompletedTask;
         this.consumer.Received -= this.HandleAsync;
         if (this.consumerTag != null)
         {
             this.session.Channel.BasicCancel(this.consumerTag);
             this.consumerTag = null;
+        }
+    }
 
-            Trace.WriteLine("Unsubscribed");
-        }
-        else
-        {
-            Trace.WriteLine("Could not unsubscribe; consumer tag is not populated.");
-        }
+    /// <inheritdoc/>
+    protected override async Task ConsumeInternal(object messageId, string json, int attempt)
+    {
+        var typedMessage = JsonSerializer.Deserialize<T>(json);
+        await this.Consume(messageId, typedMessage!, attempt);
+    }
+
+    /// <inheritdoc/>
+    protected override async Task OnConsumeSuccess(object messageId, string json, int attempt)
+    {
+        await Task.CompletedTask;
+        this.session.Channel.BasicAck((ulong)messageId, false);
+    }
+
+    /// <inheritdoc/>
+    protected override async Task OnConsumeFailure(object messageId, string json, int attempt, bool retry)
+    {
+        await Task.CompletedTask;
+        this.session.Channel.BasicNack((ulong)messageId, false, requeue: retry);
     }
 
     private async Task HandleAsync(object sender, BasicDeliverEventArgs args)
     {
-        if (this.consumerTag == null)
-        {
-            Trace.WriteLine("Refusing to consume; consumer tag is not populated.");
-        }
-
-        try
-        {
-            var message = JsonSerializer.Deserialize<T>(args.Body.ToArray());
-            var attempt = 1 + (int)args.BasicProperties.Headers["x-delivery-count"];
-            await this.Consume(message!, attempt);
-            this.session.Channel.BasicAck(args.DeliveryTag, false);
-
-            Trace.WriteLine("Message ACK'ed.");
-        }
-        catch (TransientFailureException)
-        {
-            this.session.Channel.BasicNack(args.DeliveryTag, false, requeue: true);
-
-            Trace.WriteLine("Message NACK'ed temporarily.");
-        }
-        catch
-        {
-            this.session.Channel.BasicNack(args.DeliveryTag, false, requeue: false);
-
-            Trace.WriteLine("Message NACK'ed permanently.");
-        }
+        var hasCount = args.BasicProperties.Headers.TryGetValue("x-delivery-count", out var countObject);
+        var attempt = hasCount && int.TryParse(countObject.ToString(), out var count) ? count + 1 : 1;
+        var json = Encoding.UTF8.GetString(args.Body.ToArray());
+        await this.ConsumeAsync(args.DeliveryTag, json, attempt);
     }
 }
