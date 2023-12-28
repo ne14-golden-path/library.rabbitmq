@@ -6,15 +6,23 @@ namespace ne14.library.rabbitmq;
 
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using RabbitMQ.Client;
 
 /// <summary>
 /// A RabbitMQ producer.
 /// </summary>
 /// <typeparam name="T">The message type.</typeparam>
-public abstract class RabbitMqProducer<T> : ITypedMqProducer<T>
+public abstract class RabbitMqProducer<T> : ProducerBase, ITypedMqProducer<T>
 {
     private readonly RabbitMqSession session;
+    private readonly JsonSerializerOptions jsonOpts = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+    };
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RabbitMqProducer{T}"/> class.
@@ -32,10 +40,17 @@ public abstract class RabbitMqProducer<T> : ITypedMqProducer<T>
     public abstract string ExchangeName { get; }
 
     /// <inheritdoc/>
-    public void Produce(T message)
+    public async void Produce(T message)
     {
-        var json = JsonSerializer.Serialize(message);
-        var bytes = Encoding.UTF8.GetBytes(json);
+        var json = JsonSerializer.Serialize(message, this.jsonOpts);
+        await this.ProduceAsync(json);
+    }
+
+    /// <inheritdoc/>
+    protected override async Task ProduceInternal(string message)
+    {
+        await Task.CompletedTask;
+        var bytes = Encoding.UTF8.GetBytes(message);
         this.session.Channel.BasicPublish(this.ExchangeName, string.Empty, null, bytes);
     }
 }

@@ -6,8 +6,10 @@ namespace ne14.library.rabbitmq;
 
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using ne14.library.rabbitmq.Exceptions;
 using RabbitMQ.Client;
@@ -19,13 +21,14 @@ using RabbitMQ.Client.Events;
 /// <typeparam name="T">The message type.</typeparam>
 public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
 {
+    private readonly RabbitMqSession session;
+    private readonly AsyncEventingBasicConsumer consumer;
+    private readonly Regex kebabCaseRegex = new("(?<!^)([A-Z][a-z]|(?<=[a-z])[A-Z0-9])");
     private readonly JsonSerializerOptions jsonOpts = new()
     {
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly RabbitMqSession session;
-    private readonly AsyncEventingBasicConsumer consumer;
     private string? consumerTag;
 
     /// <summary>
@@ -35,11 +38,10 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     protected RabbitMqConsumer(RabbitMqSession session)
     {
         this.session = session;
-        var queueArgs = new Dictionary<string, object>()
-        {
-            ["x-queue-type"] = "quorum",
-        };
+        this.AppName = Assembly.GetCallingAssembly().GetName().Name;
+        this.QueueName = this.ToKebabCase($"q-{this.AppName}-{this.ExchangeName}");
 
+        var queueArgs = new Dictionary<string, object> { ["x-queue-type"] = "quorum" };
         this.session.Channel.ExchangeDeclare(this.ExchangeName, ExchangeType.Fanout, true, false);
         this.session.Channel.QueueDeclare(this.QueueName, true, false, false, queueArgs);
         this.session.Channel.QueueBind(this.QueueName, this.ExchangeName, string.Empty);
@@ -50,7 +52,7 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     /// <summary>
     /// Gets the app name.
     /// </summary>
-    public abstract string AppName { get; }
+    public virtual string AppName { get; }
 
     /// <summary>
     /// Gets the exchange name.
@@ -60,7 +62,7 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     /// <summary>
     /// Gets the queue name.
     /// </summary>
-    public string QueueName => $"q-{this.AppName}-{this.ExchangeName}";
+    public string QueueName { get; }
 
     /// <inheritdoc/>
     public abstract Task Consume(object messageId, T message, int attempt);
@@ -120,6 +122,9 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
         await Task.CompletedTask;
         this.session.Channel.BasicNack((ulong)messageId, false, requeue: retry);
     }
+
+    private string ToKebabCase(string str)
+        => this.kebabCaseRegex.Replace(str, "-$1").Trim().ToLower();
 
     private async Task HandleAsync(object sender, BasicDeliverEventArgs args)
     {
