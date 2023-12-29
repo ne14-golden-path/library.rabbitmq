@@ -20,7 +20,7 @@ public class RabbitMqProducerTests
     public void Ctor_WithSession_DeclaresExchange()
     {
         // Arrange & Act
-        var sut = GetSut<SimpleRabbitProducer>(out var mockChannel);
+        var sut = GetSut<BasicRabbitProducer>(out var mockChannel);
 
         // Assert
         mockChannel.Verify(
@@ -36,7 +36,7 @@ public class RabbitMqProducerTests
     public void Produce_WithPayload_PublishesMessage()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitProducer>(out var mockChannel);
+        var sut = GetSut<BasicRabbitProducer>(out var mockChannel);
         var msg = new SimplePayload { Foo = "bar" };
         var expectedBytes = string.Join(',', Encoding.UTF8.GetBytes("{\r\n  \"foo\": \"bar\"\r\n}"));
 
@@ -57,7 +57,7 @@ public class RabbitMqProducerTests
     public void Produce_WithLifecycleHandlers_CallsHandlers()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitProducer>(out var mockChannel);
+        var sut = GetSut<TrackingRabbitProducer>(out var mockChannel);
         var expected = new Collection<string> { "producing", "produced" };
 
         // Act

@@ -21,7 +21,7 @@ public class RabbitMqConsumerTests
     public void Ctor_WithSession_DeclaresExchange()
     {
         // Arrange & Act
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<BasicRabbitConsumer>(out var mockChannel);
 
         // Assert
         mockChannel.Verify(
@@ -40,7 +40,7 @@ public class RabbitMqConsumerTests
         var expectedArgs = new Dictionary<string, object> { ["x-queue-type"] = "quorum" };
 
         // Act
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<BasicRabbitConsumer>(out var mockChannel);
 
         // Assert
         mockChannel.Verify(
@@ -56,7 +56,7 @@ public class RabbitMqConsumerTests
     public void Ctor_WithSession_BindsQueue()
     {
         // Arrange & Act
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<BasicRabbitConsumer>(out var mockChannel);
 
         // Assert
         mockChannel.Verify(m => m.QueueBind(sut.QueueName, sut.ExchangeName, string.Empty, null));
@@ -66,8 +66,8 @@ public class RabbitMqConsumerTests
     public void Ctor_WithSession_SetsQueueName()
     {
         // Arrange & Act
-        var sut = GetSut<SimpleRabbitConsumer>(out _);
-        const string expected = "q-ne-14.library.rabbitmq.tests-simple-thing";
+        var sut = GetSut<BasicRabbitConsumer>(out _);
+        const string expected = "q-ne-14.library.rabbitmq.tests-basic-thing";
 
         // Assert
         sut.QueueName.Should().Be(expected);
@@ -77,7 +77,7 @@ public class RabbitMqConsumerTests
     public async Task StartAsync_WithSession_StartsListener()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<BasicRabbitConsumer>(out var mockChannel);
 
         // Act
         await sut.StartAsync(CancellationToken.None);
@@ -98,7 +98,7 @@ public class RabbitMqConsumerTests
     public async Task StopAsync_WithSession_StopsListener()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<BasicRabbitConsumer>(out var mockChannel);
         await sut.StartAsync(CancellationToken.None); // generate consumer tag
 
         // Act
@@ -112,7 +112,7 @@ public class RabbitMqConsumerTests
     public async Task ConsumeAsync_Success_AcksMessage()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<TrackingRabbitConsumer>(out var mockChannel);
         var bytes = ToBytes(new SimplePayload { Foo = "bar" });
         const ulong messageId = 40;
 
@@ -127,7 +127,7 @@ public class RabbitMqConsumerTests
     public async Task ConsumeAsync_TransientFailure_RetriesMessage()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<TrackingRabbitConsumer>(out var mockChannel);
         var bytes = ToBytes(new SimplePayload { Foo = "bar", SimulateRetry = true });
         const ulong messageId = 41;
 
@@ -142,7 +142,7 @@ public class RabbitMqConsumerTests
     public async Task ConsumeAsync_PermanentFailure_AbandonsMessage()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<TrackingRabbitConsumer>(out var mockChannel);
         var bytes = ToBytes(new SimplePayload { Foo = "bar", SimulateRetry = false });
         const ulong messageId = 42;
 
@@ -154,12 +154,27 @@ public class RabbitMqConsumerTests
     }
 
     [Fact]
+    public async Task ConsumeAsync_Failure_DoesNotCallConsumeSuccess()
+    {
+        // Arrange
+        var sut = GetSut<TrackingRabbitConsumer>(out _);
+        var bytes = ToBytes(new SimplePayload { Foo = "bar", SimulateRetry = false });
+        const ulong messageId = 43;
+
+        // Act
+        await sut.ConsumeAsync(bytes, new() { MessageId = messageId });
+
+        // Assert
+        sut.Lifecycle.Should().BeEquivalentTo("consuming", "unconsumed");
+    }
+
+    [Fact]
     public async Task ConsumeAsync_InvalidJson_AbandonsMessage()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<BasicRabbitConsumer>(out var mockChannel);
         var bytes = ToBytes(new { Foo = "bar", SimulateRetry = "sheep" });
-        const ulong messageId = 43;
+        const ulong messageId = 44;
 
         // Act
         await sut.ConsumeAsync(bytes, new() { MessageId = messageId });
@@ -172,9 +187,9 @@ public class RabbitMqConsumerTests
     public async Task ConsumeAsync_MixedCaseJsonProperty_StillRecognisedAsInvalid()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<BasicRabbitConsumer>(out var mockChannel);
         var bytes = ToBytes(new { Foo = "bar", simUlATeReTRy = "sheep" });
-        const ulong messageId = 44;
+        const ulong messageId = 45;
 
         // Act
         await sut.ConsumeAsync(bytes, new() { MessageId = messageId });
@@ -187,7 +202,7 @@ public class RabbitMqConsumerTests
     public async Task ConsumeAsync_SuccessNoContext_ThrowsArgNull()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<BasicRabbitConsumer>(out var mockChannel);
         var bytes = ToBytes(new SimplePayload());
 
         // Act
@@ -202,7 +217,7 @@ public class RabbitMqConsumerTests
     public async Task ConsumeAsync_FailureNoContext_ThrowsArgNull()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<TrackingRabbitConsumer>(out var mockChannel);
         var bytes = ToBytes(new SimplePayload { SimulateRetry = true });
 
         // Act
@@ -217,9 +232,9 @@ public class RabbitMqConsumerTests
     public async Task LifecycleMethods_WithHandler_CapturesExpected()
     {
         // Arrange
-        var sut = GetSut<SimpleRabbitConsumer>(out var mockChannel);
+        var sut = GetSut<TrackingRabbitConsumer>(out var mockChannel);
         var bytes = ToBytes(new SimplePayload());
-        var expected = new Collection<string> { "starting", "started", "consuming", "stopping", "stopped" };
+        var expected = new Collection<string> { "starting", "started", "consuming", "consumed", "stopping", "stopped" };
 
         // Act
         await sut.StartAsync(CancellationToken.None);

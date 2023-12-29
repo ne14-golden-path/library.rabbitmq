@@ -1,4 +1,4 @@
-﻿// <copyright file="SimpleRabbitProducer.cs" company="ne1410s">
+﻿// <copyright file="TrackingRabbitProducer.cs" company="ne1410s">
 // Copyright (c) ne1410s. All rights reserved.
 // </copyright>
 
@@ -8,12 +8,12 @@ using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using ne14.library.rabbitmq.Vendor;
 
-public class SimpleRabbitProducer(IRabbitMqSession session)
+public class TrackingRabbitProducer(IRabbitMqSession session)
     : RabbitMqProducer<SimplePayload>(session)
 {
     public Collection<string> Lifecycle { get; } = [];
 
-    public override string ExchangeName => "simple-thing";
+    public override string ExchangeName => "tracking-thing";
 
     protected override Task OnProducing(string message)
     {

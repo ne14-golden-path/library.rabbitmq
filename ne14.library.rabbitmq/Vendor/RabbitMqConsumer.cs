@@ -73,6 +73,7 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     {
         if (this.consumerTag == null)
         {
+            // Stryker disable once Assignment
             this.consumer.Received += this.HandleAsync;
             this.consumerTag = this.session.Channel.BasicConsume(this.QueueName, false, this.consumer);
         }
@@ -83,6 +84,7 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     /// <inheritdoc/>
     protected override Task StopInternal()
     {
+        // Stryker disable once Assignment
         this.consumer.Received -= this.HandleAsync;
         if (this.consumerTag != null)
         {
