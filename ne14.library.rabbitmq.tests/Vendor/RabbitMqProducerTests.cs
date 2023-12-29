@@ -38,7 +38,8 @@ public class RabbitMqProducerTests
         // Arrange
         var sut = GetSut<BasicRabbitProducer>(out var mockChannel);
         var msg = new SimplePayload { Foo = "bar" };
-        var expectedBytes = string.Join(',', Encoding.UTF8.GetBytes("{\r\n  \"foo\": \"bar\"\r\n}"));
+        var line = Environment.NewLine;
+        var expectedBytes = string.Join(',', Encoding.UTF8.GetBytes($"{{{line}  \"foo\": \"bar\"{line}}}"));
 
         // Act
         sut.Produce(msg);
