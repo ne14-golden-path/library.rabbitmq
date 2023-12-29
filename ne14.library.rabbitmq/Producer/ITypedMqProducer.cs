@@ -2,7 +2,7 @@
 // Copyright (c) ne1410s. All rights reserved.
 // </copyright>
 
-namespace ne14.library.rabbitmq;
+namespace ne14.library.rabbitmq.Producer;
 
 /// <summary>
 /// A message producer.

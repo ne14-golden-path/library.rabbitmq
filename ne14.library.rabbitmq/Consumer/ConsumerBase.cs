@@ -2,9 +2,10 @@
 // Copyright (c) ne1410s. All rights reserved.
 // </copyright>
 
-namespace ne14.library.rabbitmq;
+namespace ne14.library.rabbitmq.Consumer;
 
 using System;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
@@ -32,25 +33,22 @@ public abstract class ConsumerBase : IMqConsumer, IHostedService
     }
 
     /// <inheritdoc/>
-    public async Task ConsumeAsync(object messageId, string json, int attempt)
+    public async Task ConsumeAsync(byte[] messageBytes, ConsumerContext context)
     {
-        await this.OnConsuming(messageId, json, attempt);
-        var consumedOk = false;
+        var json = Encoding.UTF8.GetString(messageBytes);
+        await this.OnConsuming(json, context);
         try
         {
-            await this.ConsumeInternal(messageId, json, attempt);
-            consumedOk = true;
+            await this.ConsumeInternal(json, context);
         }
         catch (Exception ex)
         {
-            var doRetry = await this.DoRetry(ex, attempt, json);
-            await this.OnConsumeFailure(messageId, json, attempt, doRetry);
+            var doRetry = await this.DoRetry(ex, json, context);
+            await this.OnConsumeFailure(json, context, doRetry);
+            return;
         }
 
-        if (consumedOk)
-        {
-            await this.OnConsumeSuccess(messageId, json, attempt);
-        }
+        await this.OnConsumeSuccess(json, context);
     }
 
     /// <summary>
@@ -68,51 +66,47 @@ public abstract class ConsumerBase : IMqConsumer, IHostedService
     /// <summary>
     /// Internal handler for consuming a message.
     /// </summary>
-    /// <param name="messageId">The message id.</param>
-    /// <param name="json">The raw message json.</param>
-    /// <param name="attempt">The attempt number.</param>
+    /// <param name="json">The raw message.</param>
+    /// <param name="context">The consumer context.</param>
     /// <returns>Async task.</returns>
-    protected abstract Task ConsumeInternal(object messageId, string json, int attempt);
+    protected abstract Task ConsumeInternal(string json, ConsumerContext context);
 
     /// <summary>
     /// Fired when a message is received and about to be consumed.
     /// </summary>
-    /// <param name="messageId">The message id.</param>
-    /// <param name="json">The raw message json.</param>
-    /// <param name="attempt">The attempt number.</param>
+    /// <param name="json">The raw message.</param>
+    /// <param name="context">The consumer context.</param>
     /// <returns>Async task.</returns>
-    protected virtual Task OnConsuming(object messageId, string json, int attempt) => Task.CompletedTask;
+    protected virtual Task OnConsuming(string json, ConsumerContext context) => Task.CompletedTask;
 
     /// <summary>
     /// Fired when consumer code completed without error.
     /// </summary>
-    /// <param name="messageId">The message id.</param>
-    /// <param name="json">The raw message json.</param>
-    /// <param name="attempt">The attempt number.</param>
+    /// <param name="json">The raw message.</param>
+    /// <param name="context">The consumer context.</param>
     /// <returns>Async task.</returns>
-    protected abstract Task OnConsumeSuccess(object messageId, string json, int attempt);
+    protected abstract Task OnConsumeSuccess(string json, ConsumerContext context);
 
     /// <summary>
     /// Fired when consumer code threw an exception.
     /// </summary>
-    /// <param name="messageId">The message id.</param>
-    /// <param name="json">The raw message json.</param>
-    /// <param name="attempt">The attempt number.</param>
+    /// <param name="json">The raw message.</param>
+    /// <param name="context">The consumer context.</param>
     /// <param name="retry">Whether the message should be re-queued.</param>
     /// <returns>Async task.</returns>
-    protected abstract Task OnConsumeFailure(object messageId, string json, int attempt, bool retry);
+    protected abstract Task OnConsumeFailure(string json, ConsumerContext context, bool retry);
 
     /// <summary>
     /// Used to determine whether a message should be retried.
     /// </summary>
     /// <param name="ex">The exception.</param>
-    /// <param name="attempt">The attempt number.</param>
-    /// <param name="json">The raw message json.</param>
+    /// <param name="json">The raw message.</param>
+    /// <param name="context">The consumer context.</param>
     /// <returns>Whether to retry.</returns>
-    protected virtual async Task<bool> DoRetry(Exception ex, int attempt, string json)
+    protected virtual Task<bool> DoRetry(Exception ex, string json, ConsumerContext context)
     {
-        await Task.CompletedTask;
-        return ex is not PermanentFailureException;
+        var retVal = ex is not PermanentFailureException;
+        return Task.FromResult(retVal);
     }
 
     /// <summary>

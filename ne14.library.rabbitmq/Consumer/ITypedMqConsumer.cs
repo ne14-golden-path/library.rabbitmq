@@ -2,7 +2,7 @@
 // Copyright (c) ne1410s. All rights reserved.
 // </copyright>
 
-namespace ne14.library.rabbitmq;
+namespace ne14.library.rabbitmq.Consumer;
 
 using System.Threading.Tasks;
 
@@ -15,9 +15,8 @@ public interface ITypedMqConsumer<in T> : IMqConsumer
     /// <summary>
     /// Consumes a message.
     /// </summary>
-    /// <param name="messageId">The message id.</param>
     /// <param name="message">The message.</param>
-    /// <param name="attempt">The attempt number.</param>
+    /// <param name="context">The consumer context.</param>
     /// <returns>Async task.</returns>
-    public Task Consume(object messageId, T message, int attempt);
+    public Task Consume(T message, ConsumerContext context);
 }

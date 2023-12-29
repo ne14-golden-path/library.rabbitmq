@@ -2,15 +2,16 @@
 // Copyright (c) ne1410s. All rights reserved.
 // </copyright>
 
-namespace ne14.library.rabbitmq;
+namespace ne14.library.rabbitmq.Vendor;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using ne14.library.rabbitmq.Consumer;
 using ne14.library.rabbitmq.Exceptions;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -21,7 +22,7 @@ using RabbitMQ.Client.Events;
 /// <typeparam name="T">The message type.</typeparam>
 public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
 {
-    private readonly RabbitMqSession session;
+    private readonly IRabbitMqSession session;
     private readonly AsyncEventingBasicConsumer consumer;
     private readonly Regex kebabCaseRegex = new("(?<!^)([A-Z][a-z]|(?<=[a-z])[A-Z0-9])");
     private readonly JsonSerializerOptions jsonOpts = new()
@@ -35,7 +36,7 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     /// Initializes a new instance of the <see cref="RabbitMqConsumer{T}"/> class.
     /// </summary>
     /// <param name="session">The session.</param>
-    protected RabbitMqConsumer(RabbitMqSession session)
+    protected RabbitMqConsumer(IRabbitMqSession session)
     {
         this.session = session;
         this.AppName = Assembly.GetCallingAssembly().GetName().Name;
@@ -65,33 +66,35 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     public string QueueName { get; }
 
     /// <inheritdoc/>
-    public abstract Task Consume(object messageId, T message, int attempt);
+    public abstract Task Consume(T message, ConsumerContext context);
 
     /// <inheritdoc/>
-    protected override async Task StartInternal()
+    protected override Task StartInternal()
     {
-        await Task.CompletedTask;
         if (this.consumerTag == null)
         {
             this.consumer.Received += this.HandleAsync;
             this.consumerTag = this.session.Channel.BasicConsume(this.QueueName, false, this.consumer);
         }
+
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    protected override async Task StopInternal()
+    protected override Task StopInternal()
     {
-        await Task.CompletedTask;
         this.consumer.Received -= this.HandleAsync;
         if (this.consumerTag != null)
         {
             this.session.Channel.BasicCancel(this.consumerTag);
             this.consumerTag = null;
         }
+
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    protected override async Task ConsumeInternal(object messageId, string json, int attempt)
+    protected override async Task ConsumeInternal(string json, ConsumerContext context)
     {
         T? typedMessage;
         try
@@ -105,33 +108,36 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
 
         if (typedMessage != null)
         {
-            await this.Consume(messageId, typedMessage, attempt);
+            await this.Consume(typedMessage, context);
         }
     }
 
     /// <inheritdoc/>
-    protected override async Task OnConsumeSuccess(object messageId, string json, int attempt)
+    protected override Task OnConsumeSuccess(string json, ConsumerContext context)
     {
-        await Task.CompletedTask;
-        this.session.Channel.BasicAck((ulong)messageId, false);
+        context = context ?? throw new ArgumentNullException(nameof(context));
+        this.session.Channel.BasicAck((ulong)context.MessageId, false);
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    protected override async Task OnConsumeFailure(object messageId, string json, int attempt, bool retry)
+    protected override Task OnConsumeFailure(string json, ConsumerContext context, bool retry)
     {
-        await Task.CompletedTask;
-        this.session.Channel.BasicNack((ulong)messageId, false, requeue: retry);
+        context = context ?? throw new ArgumentNullException(nameof(context));
+        this.session.Channel.BasicNack((ulong)context.MessageId, false, requeue: retry);
+        return Task.CompletedTask;
     }
 
     private string ToKebabCase(string str)
         => this.kebabCaseRegex.Replace(str, "-$1").Trim().ToLower();
 
+    [ExcludeFromCodeCoverage]
     private async Task HandleAsync(object sender, BasicDeliverEventArgs args)
     {
         var headers = args.BasicProperties.Headers ?? new Dictionary<string, object>();
         var hasCount = headers.TryGetValue("x-delivery-count", out var countObject);
         var attempt = hasCount && int.TryParse(countObject.ToString(), out var count) ? count + 1 : 1;
-        var json = Encoding.UTF8.GetString(args.Body.ToArray());
-        await this.ConsumeAsync(args.DeliveryTag, json, attempt);
+        var context = new ConsumerContext { MessageId = args.DeliveryTag, AttemptNumber = attempt };
+        await this.ConsumeAsync(args.Body.ToArray(), context);
     }
 }

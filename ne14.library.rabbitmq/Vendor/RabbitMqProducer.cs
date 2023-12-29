@@ -2,12 +2,13 @@
 // Copyright (c) ne1410s. All rights reserved.
 // </copyright>
 
-namespace ne14.library.rabbitmq;
+namespace ne14.library.rabbitmq.Vendor;
 
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using ne14.library.rabbitmq.Producer;
 using RabbitMQ.Client;
 
 /// <summary>
@@ -16,7 +17,7 @@ using RabbitMQ.Client;
 /// <typeparam name="T">The message type.</typeparam>
 public abstract class RabbitMqProducer<T> : ProducerBase, ITypedMqProducer<T>
 {
-    private readonly RabbitMqSession session;
+    private readonly IRabbitMqSession session;
     private readonly JsonSerializerOptions jsonOpts = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -28,7 +29,7 @@ public abstract class RabbitMqProducer<T> : ProducerBase, ITypedMqProducer<T>
     /// Initializes a new instance of the <see cref="RabbitMqProducer{T}"/> class.
     /// </summary>
     /// <param name="session">The session.</param>
-    protected RabbitMqProducer(RabbitMqSession session)
+    protected RabbitMqProducer(IRabbitMqSession session)
     {
         this.session = session;
         this.session.Channel.ExchangeDeclare(this.ExchangeName, ExchangeType.Fanout, true, false);
@@ -47,10 +48,10 @@ public abstract class RabbitMqProducer<T> : ProducerBase, ITypedMqProducer<T>
     }
 
     /// <inheritdoc/>
-    protected override async Task ProduceInternal(string message)
+    protected override Task ProduceInternal(string message)
     {
-        await Task.CompletedTask;
         var bytes = Encoding.UTF8.GetBytes(message);
         this.session.Channel.BasicPublish(this.ExchangeName, string.Empty, null, bytes);
+        return Task.CompletedTask;
     }
 }

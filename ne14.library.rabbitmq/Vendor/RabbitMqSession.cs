@@ -2,7 +2,7 @@
 // Copyright (c) ne1410s. All rights reserved.
 // </copyright>
 
-namespace ne14.library.rabbitmq;
+namespace ne14.library.rabbitmq.Vendor;
 
 using System;
 using RabbitMQ.Client;
@@ -10,34 +10,24 @@ using RabbitMQ.Client;
 /// <summary>
 /// Rabbit MQ session.
 /// </summary>
-public sealed class RabbitMqSession : IDisposable
+public sealed class RabbitMqSession : IRabbitMqSession, IDisposable
 {
     private readonly IConnection connection;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RabbitMqSession"/> class.
     /// </summary>
-    /// <param name="username">The user name.</param>
-    /// <param name="password">The password.</param>
-    /// <param name="hostname">The host name.</param>
-    public RabbitMqSession(string username, string password, string hostname)
+    /// <param name="factory">The connection factory.</param>
+    public RabbitMqSession(IConnectionFactory factory)
     {
-        var factory = new ConnectionFactory
-        {
-            UserName = username,
-            Password = password,
-            HostName = hostname,
-            DispatchConsumersAsync = true,
-        };
-
-        this.connection = factory.CreateConnection();
+        this.connection = factory?.CreateConnection() ?? throw new ArgumentNullException(nameof(factory));
         this.Channel = this.connection.CreateModel();
     }
 
     /// <summary>
     /// Gets the channel.
     /// </summary>
-    internal IModel Channel { get; }
+    public IModel Channel { get; }
 
     /// <inheritdoc/>
     public void Dispose()

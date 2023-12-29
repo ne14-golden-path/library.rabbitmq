@@ -2,7 +2,7 @@
 // Copyright (c) ne1410s. All rights reserved.
 // </copyright>
 
-namespace ne14.library.rabbitmq;
+namespace ne14.library.rabbitmq.Consumer;
 
 using System.Threading.Tasks;
 
@@ -12,11 +12,10 @@ using System.Threading.Tasks;
 public interface IMqConsumer
 {
     /// <summary>
-    /// Consumes a raw message.
+    /// Consumes a message.
     /// </summary>
-    /// <param name="messageId">The message id.</param>
-    /// <param name="json">The raw message json.</param>
-    /// <param name="attempt">The attempt number.</param>
+    /// <param name="messageBytes">The raw message bytes.</param>
+    /// <param name="context">The consumer context.</param>
     /// <returns>Async task.</returns>
-    public Task ConsumeAsync(object messageId, string json, int attempt);
+    public Task ConsumeAsync(byte[] messageBytes, ConsumerContext context);
 }
