@@ -16,6 +16,11 @@ using ne14.library.rabbitmq.Exceptions;
 /// </summary>
 public abstract class ConsumerBase : IMqConsumer, IHostedService
 {
+    /// <summary>
+    /// Gets or sets the maximum number of attempts before giving up.
+    /// </summary>
+    protected long? MaxAttempts { get; set; }
+
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -105,7 +110,8 @@ public abstract class ConsumerBase : IMqConsumer, IHostedService
     /// <returns>Whether to retry.</returns>
     protected virtual Task<bool> DoRetry(Exception ex, string json, ConsumerContext context)
     {
-        var retVal = ex is not PermanentFailureException;
+        var retVal = ex is not PermanentFailureException
+            && context?.AttemptNumber < (this.MaxAttempts ?? long.MaxValue);
         return Task.FromResult(retVal);
     }
 

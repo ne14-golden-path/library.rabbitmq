@@ -7,15 +7,10 @@ namespace ne14.library.rabbitmq.Consumer;
 /// <summary>
 /// Implementation relating to the mq consumer context.
 /// </summary>
-public record ConsumerContext
-{
-    /// <summary>
-    /// Gets the message id.
-    /// </summary>
-    public object MessageId { get; init; } = default!;
-
-    /// <summary>
-    /// Gets the attempt number.
-    /// </summary>
-    public int AttemptNumber { get; init; }
-}
+/// <param name="BornOn">Unix time the message was first received.</param>
+/// <param name="AttemptNumber">The attempt number.</param>
+/// <param name="DeliveryId">The delivery id (for broken correlation).</param>
+public record ConsumerContext(
+    long BornOn,
+    long AttemptNumber,
+    object DeliveryId);

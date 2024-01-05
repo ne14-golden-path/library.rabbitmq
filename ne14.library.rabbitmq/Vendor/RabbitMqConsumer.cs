@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -22,6 +23,10 @@ using RabbitMQ.Client.Events;
 /// <typeparam name="T">The message type.</typeparam>
 public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
 {
+    private const string DefaultRoute = "DEFAULT";
+    private const string Tier1Route = "TIER1_RETRY";
+    private const string Tier2Route = "TIER2_DLQ";
+
     private readonly IRabbitMqSession session;
     private readonly AsyncEventingBasicConsumer consumer;
     private readonly Regex kebabCaseRegex = new("(?<!^)([A-Z][a-z]|(?<=[a-z])[A-Z0-9])");
@@ -40,12 +45,32 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     {
         this.session = session;
         this.AppName = Assembly.GetCallingAssembly().GetName().Name;
-        this.QueueName = this.ToKebabCase($"q-{this.AppName}-{this.ExchangeName}");
 
-        var queueArgs = new Dictionary<string, object> { ["x-queue-type"] = "quorum" };
-        this.session.Channel.ExchangeDeclare(this.ExchangeName, ExchangeType.Fanout, true, false);
-        this.session.Channel.QueueDeclare(this.QueueName, true, false, false, queueArgs);
-        this.session.Channel.QueueBind(this.QueueName, this.ExchangeName, string.Empty);
+        // Main handler queue
+        this.QueueName = this.ToKebabCase($"q-{this.AppName}-{this.ExchangeName}");
+        var mainQArgs = new Dictionary<string, object>
+        {
+            ["x-dead-letter-exchange"] = this.ExchangeName,
+            ["x-dead-letter-routing-key"] = Tier1Route,
+        };
+        this.session.Channel.ExchangeDeclare(this.ExchangeName, ExchangeType.Direct, true);
+        this.session.Channel.QueueDeclare(this.QueueName, true, false, false, mainQArgs);
+        this.session.Channel.QueueBind(this.QueueName, this.ExchangeName, DefaultRoute);
+
+        // Tier 1 Failure: Retry
+        var tier1Queue = this.QueueName + "_" + Tier1Route;
+        var retryQArgs = new Dictionary<string, object>
+        {
+            ["x-dead-letter-exchange"] = this.ExchangeName,
+            ["x-dead-letter-routing-key"] = DefaultRoute,
+        };
+        this.session.Channel.QueueDeclare(tier1Queue, true, false, false, retryQArgs);
+        this.session.Channel.QueueBind(tier1Queue, this.ExchangeName, Tier1Route);
+
+        // Tier 2 Failure: Dead-letter
+        var tier2Queue = this.QueueName + "_" + Tier2Route;
+        this.session.Channel.QueueDeclare(tier2Queue, true, false, false);
+        this.session.Channel.QueueBind(tier2Queue, this.ExchangeName, Tier2Route);
 
         this.consumer = new AsyncEventingBasicConsumer(this.session.Channel);
     }
@@ -118,7 +143,7 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     protected override Task OnConsumeSuccess(string json, ConsumerContext context)
     {
         context = context ?? throw new ArgumentNullException(nameof(context));
-        this.session.Channel.BasicAck((ulong)context.MessageId, false);
+        this.session.Channel.BasicAck((ulong)context.DeliveryId, false);
         return Task.CompletedTask;
     }
 
@@ -126,7 +151,18 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     protected override Task OnConsumeFailure(string json, ConsumerContext context, bool retry)
     {
         context = context ?? throw new ArgumentNullException(nameof(context));
-        this.session.Channel.BasicNack((ulong)context.MessageId, false, requeue: retry);
+
+        if (retry)
+        {
+            this.session.Channel.BasicNack((ulong)context.DeliveryId, false, false);
+        }
+        else
+        {
+            var ogBytes = Encoding.UTF8.GetBytes(json);
+            this.session.Channel.BasicAck((ulong)context.DeliveryId, false);
+            this.session.Channel.BasicPublish(this.ExchangeName, Tier2Route, null, ogBytes);
+        }
+
         return Task.CompletedTask;
     }
 
@@ -136,10 +172,17 @@ public abstract class RabbitMqConsumer<T> : ConsumerBase, ITypedMqConsumer<T>
     [ExcludeFromCodeCoverage]
     private async Task HandleAsync(object sender, BasicDeliverEventArgs args)
     {
+        var attempt = 1L;
+        var bornOn = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var headers = args.BasicProperties.Headers ?? new Dictionary<string, object>();
-        var hasCount = headers.TryGetValue("x-delivery-count", out var countObject);
-        var attempt = hasCount && int.TryParse(countObject.ToString(), out var count) ? count + 1 : 1;
-        var context = new ConsumerContext { MessageId = args.DeliveryTag, AttemptNumber = attempt };
+        if (headers.TryGetValue("x-death", out var death) && death is List<object> deathList)
+        {
+            var dicto = (Dictionary<string, object>)deathList[0];
+            attempt = dicto.TryGetValue("count", out var countObj) ? (long)countObj : attempt;
+            bornOn = dicto.TryGetValue("time", out var timeObj) ? ((AmqpTimestamp)timeObj).UnixTime : bornOn;
+        }
+
+        var context = new ConsumerContext(bornOn, attempt, args.DeliveryTag);
         await this.ConsumeAsync(args.Body.ToArray(), context);
     }
 }

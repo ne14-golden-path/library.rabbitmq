@@ -17,6 +17,8 @@ using RabbitMQ.Client;
 /// <typeparam name="T">The message type.</typeparam>
 public abstract class RabbitMqProducer<T> : ProducerBase, ITypedMqProducer<T>
 {
+    private const string DefaultRoute = "DEFAULT";
+
     private readonly IRabbitMqSession session;
     private readonly JsonSerializerOptions jsonOpts = new()
     {
@@ -32,7 +34,7 @@ public abstract class RabbitMqProducer<T> : ProducerBase, ITypedMqProducer<T>
     protected RabbitMqProducer(IRabbitMqSession session)
     {
         this.session = session;
-        this.session.Channel.ExchangeDeclare(this.ExchangeName, ExchangeType.Fanout, true, false);
+        this.session.Channel.ExchangeDeclare(this.ExchangeName, ExchangeType.Direct, true);
     }
 
     /// <summary>
@@ -51,7 +53,7 @@ public abstract class RabbitMqProducer<T> : ProducerBase, ITypedMqProducer<T>
     protected override Task ProduceInternal(string message)
     {
         var bytes = Encoding.UTF8.GetBytes(message);
-        this.session.Channel.BasicPublish(this.ExchangeName, string.Empty, null, bytes);
+        this.session.Channel.BasicPublish(this.ExchangeName, DefaultRoute, null, bytes);
         return Task.CompletedTask;
     }
 }
